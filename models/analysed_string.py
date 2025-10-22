@@ -15,17 +15,22 @@ class AnalysedString:
         Initialize the string object
         """
         if len(args) == 1 and isinstance(args[0], str):
-            string = args[0]
+            # Object instantiation
             self.id = hashlib.sha256(string.encode()).hexdigest()
-            self.string = string
+            self.string = args[0]
             self.properties = self.compute_properties()
             self.created_at = datetime.utcnow().isoformat() + "Z"
-            # compute hash
-        self.id = hashlib.sha256(string.encode()).hexdigest()
-        self.string = string
-        self.properties = self.compute_properties()
-        self.created_at = datetime.utcnow().isoformat() + "Z"
-    
+   
+        else:
+            # If len[args] is not 1, it means a tuple
+            # a tuple was passed. That tuple should 
+            # contain three fields:
+            # id, value, and created_at.
+            self.id = args[0]
+            self.string = args[1]
+            self.properties = self.compute_properties()
+            self.created_at = args[2]
+
     def is_palindrome(self):
         """
         Check if the string is a palindrome
