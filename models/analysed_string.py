@@ -10,11 +10,17 @@ class AnalysedString:
     This class defines the a string with special properties
     """
 
-    def __init__(self, string):
+    def __init__(self, *args):
         """
         Initialize the string object
         """
-        # compute hash
+        if len(args) == 1 and isinstance(args[0], str):
+            string = args[0]
+            self.id = hashlib.sha256(string.encode()).hexdigest()
+            self.string = string
+            self.properties = self.compute_properties()
+            self.created_at = datetime.utcnow().isoformat() + "Z"
+            # compute hash
         self.id = hashlib.sha256(string.encode()).hexdigest()
         self.string = string
         self.properties = self.compute_properties()
@@ -24,7 +30,7 @@ class AnalysedString:
         """
         Check if the string is a palindrome
         """
-        # remove non-alphanumeric char
+        # remove non-alphanumeric chars
         s = re.sub("[^a-z0-9]", "", self.string.lower())
         # compare string with its reverse
         return s == s[::-1]
@@ -59,8 +65,8 @@ class AnalysedString:
         d["word_count"] = self.word_count()
         d["sha256_hash"] = self.id
         d["character_frequency_map"] = self.char_freq_map()
-        return d
 
+        return d
 
     def to_dict(self):
         """
