@@ -56,6 +56,130 @@ def get_analysed_string(string_value):
     response = analysed_string.to_dict()
     return jsonify(response), 200
 
+@app.get('/strings')
+def list_analysed_strings():
+    """
+    This endpoint lists all analysed strings
+    """
+    if not request.args:
+        records = storage.get_all_analysed_strings()
+        data = [AnalysedString(record).to_dict() for record in records]
+        response = {
+            "data": data,
+            "count": len(data),
+            "filters_applied": None
+        }
+        return jsonify(response), 200
+
+    # --- Extract and validate query params ---
+    try:
+        is_palindrome = request.args.get('is_palindrome')
+        min_length = request.args.get('min_length', type=int)
+        max_length = request.args.get('max_length', type=int)
+        word_count = request.args.get('word_count', type=int)
+        contains_character = request.args.get('contains_character')
+
+        filters = []
+        params = []
+
+        if is_palindrome is not None:
+            if is_palindrome.lower() not in ('true', 'false'):
+                return jsonify({"error": "Invalid is_palindrome value"}), 400
+            filters.append("is_palindrome = ?")
+            params.append(is_palindrome.lower() == 'true')
+
+        if min_length is not None:
+            filters.append("length >= ?")
+            params.append(min_length)
+
+        if max_length is not None:
+            filters.append("length <= ?")
+            params.append(max_length)
+
+        if word_count is not None:
+            filters.append("word_count = ?")
+            params.append(word_count)
+
+        if contains_character:
+            filters.append("value LIKE ?")
+            params.append(f"%{contains_character}%")
+
+        where_clause = " AND ".join(filters) if filters else "1=1"
+
+
+        query = f"""
+            SELECT string_properties.id
+            FROM string_properties
+            JOIN string_properties
+            ON analysed_strings.id = string_properties.string_id
+            WHERE {where_clause};
+        """
+        rows = storage.fetchall(query, tuple(params))
+        # --- Format response ---
+        data = []
+        for row in rows:
+            data.append({
+                "id": row["id"],
+                "value": row["value"],
+                "properties": {
+                    "length": row["length"],
+                    "is_palindrome": bool(row["is_palindrome"]),
+                    "unique_characters": row["unique_characters"],
+                    "word_count": row["word_count"]
+                },
+                "created_at": row["created_at"]
+            })
+
+        return jsonify({
+            "data": data,
+            "count": len(data),
+            "filters_applied": {
+                "is_palindrome": is_palindrome,
+                "min_length": min_length,
+                "max_length": max_length,
+                "word_count": word_count,
+                "contains_character": contains_character
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+  
+    is_palindrome = request.args.get('is_palindrome')
+    min_length = request.args.get('min_length', type=int)
+    max_length = request.args.get('max_length', type=int)
+    word_count = request.args.get('word_count', type=int)
+    contains_character = request.args.get('contains_character')
+    if any(filter is None for filter in [min_length, max_length, word_count]):
+        abort(
+            400,
+            description="Invalid query parameter values or types")
+    elif is_palindrome not in ['true', 'false']:
+        abort(
+            400,
+            description="Invalid query parameter values or types")
+    elif not isinstance(contains_character, str) and len(contains_character) != 1:
+        abort(
+            400,
+            description="Invalid query parameter values or types")
+
+    if is_palindrome == 'true':
+        is_palindrome = True
+    else:
+        is_palindrome = False
+    
+    filters = {
+        "is_palindrome": is_palindrome,
+        "min_length": min_length,
+        "max_length": max_length,
+        "word_count": word_count,
+        "contains_character": contains_character
+    }
+    records = storage.get_all_analysed_strings()
+    response = [AnalysedString(record).to_dict() for record in records]
+    return jsonify(response), 200
 def error_response(code, e):
     response = {}
     response["status"] = "success"
