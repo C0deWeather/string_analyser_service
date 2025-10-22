@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-from datetime import datetime
-from flask import Flask, jsonify, abort
-from flask import request
+from flask import Flask, jsonify, abort, request
 from models.analysed_string import AnalysedString
-from models.storage import DBStorage
+from models import storage
+import os
+import re
 
 
 app = Flask(__name__)
-storage = DBStorage()
-
 # do not sort JSON keys
 app.json.sort_keys = False
 
@@ -18,8 +16,9 @@ def analyse_string():
     """
     This endpoint analyses a string sent via a POST request
     """
+    storage.reload()
     # check if request body is JSON and has "value" field
-    if not request.is_json or "value" not in request.json:
+    if not request.is_json and "value" not in request.json:
         abort(
             400,
             description="Invalid request body or missing \"value\" field")
@@ -46,13 +45,14 @@ def get_analysed_string(string_value):
     """
     This endpoint retrieves the analysis of a previously analysed string
     """
+    storage.reload()
     record = storage.get_analysed_string_by_value(string_value)
     if not record:
         abort(
             404,
             description="String does not exist in the system")
     # reconstruct AnalysedString object from db record
-    analysed_string = AnalysedString(record)
+    analysed_string = AnalysedString(record[1])
     response = analysed_string.to_dict()
     return jsonify(response), 200
 
@@ -61,9 +61,10 @@ def list_analysed_strings():
     """
     This endpoint lists all analysed strings
     """
+    storage.reload()
     if not request.args:
         records = storage.get_all_analysed_strings()
-        data = [AnalysedString(record).to_dict() for record in records]
+        data = [AnalysedString(record[1]).to_dict() for record in records]
         response = {
             "data": data,
             "count": len(data),
@@ -84,7 +85,9 @@ def list_analysed_strings():
 
         if is_palindrome is not None:
             if is_palindrome.lower() not in ('true', 'false'):
-                return jsonify({"error": "Invalid is_palindrome value"}), 400
+                abort(
+            400,
+            description="Invalid query parameter values or types")
             filters.append("is_palindrome = ?")
             params.append(is_palindrome.lower() == 'true')
 
@@ -95,7 +98,7 @@ def list_analysed_strings():
         if max_length is not None:
             filters.append("length <= ?")
             params.append(max_length)
-
+        
         if word_count is not None:
             filters.append("word_count = ?")
             params.append(word_count)
@@ -110,25 +113,16 @@ def list_analysed_strings():
         query = f"""
             SELECT string_properties.id
             FROM string_properties
-            JOIN string_properties
-            ON analysed_strings.id = string_properties.string_id
+            JOIN character_frequency_map
+            ON string_properties.string_id = character_frequency_map.string_id
             WHERE {where_clause};
         """
         rows = storage.fetchall(query, tuple(params))
         # --- Format response ---
         data = []
         for row in rows:
-            data.append({
-                "id": row["id"],
-                "value": row["value"],
-                "properties": {
-                    "length": row["length"],
-                    "is_palindrome": bool(row["is_palindrome"]),
-                    "unique_characters": row["unique_characters"],
-                    "word_count": row["word_count"]
-                },
-                "created_at": row["created_at"]
-            })
+            rec = storage.get_analysed_string_by_value(row['id'])
+            data.append(AnalysedString(rec[1]).to_dict())
 
         return jsonify({
             "data": data,
@@ -143,67 +137,130 @@ def list_analysed_strings():
         }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        abort(500, description=str(e))
 
 
-  
-    is_palindrome = request.args.get('is_palindrome')
-    min_length = request.args.get('min_length', type=int)
-    max_length = request.args.get('max_length', type=int)
-    word_count = request.args.get('word_count', type=int)
-    contains_character = request.args.get('contains_character')
-    if any(filter is None for filter in [min_length, max_length, word_count]):
-        abort(
-            400,
-            description="Invalid query parameter values or types")
-    elif is_palindrome not in ['true', 'false']:
-        abort(
-            400,
-            description="Invalid query parameter values or types")
-    elif not isinstance(contains_character, str) and len(contains_character) != 1:
-        abort(
-            400,
-            description="Invalid query parameter values or types")
 
-    if is_palindrome == 'true':
-        is_palindrome = True
-    else:
-        is_palindrome = False
-    
-    filters = {
-        "is_palindrome": is_palindrome,
-        "min_length": min_length,
-        "max_length": max_length,
-        "word_count": word_count,
-        "contains_character": contains_character
-    }
-    records = storage.get_all_analysed_strings()
-    response = [AnalysedString(record).to_dict() for record in records]
-    return jsonify(response), 200
+
+@app.get('/strings/filter-by-natural-language')
+def filter_by_natural_language():
+    storage.reload()
+
+    query = request.args.get('query', '').strip().lower()
+    if not query:
+        return jsonify({"error": "Query parameter is required"}), 400
+
+    parsed_filters = {}
+
+    try:
+        # --- NLP Heuristics ---
+        if "palindromic" in query or "palindrome" in query:
+            parsed_filters["is_palindrome"] = True
+
+        if "single word" in query or "one word" in query:
+            parsed_filters["word_count"] = 1
+
+        match_len = re.search(r'longer than (\d+)', query)
+        if match_len:
+            parsed_filters["min_length"] = int(match_len.group(1)) + 1
+
+        match_len_max = re.search(r'shorter than (\d+)', query)
+        if match_len_max:
+            parsed_filters["max_length"] = int(match_len_max.group(1)) - 1
+
+        match_contains = re.search(r'contain(?:ing)? the letter (\w)', query)
+        if match_contains:
+            parsed_filters["contains_character"] = match_contains.group(1)
+
+        # fallback heuristic for “first vowel”
+        if "first vowel" in query:
+            parsed_filters["contains_character"] = 'a'
+
+        if not parsed_filters:
+            abort(400, description = "Unable to parse natural language query")
+
+        # --- Build WHERE clause dynamically ---
+        filters = []
+        params = []
+        if "is_palindrome" in parsed_filters:
+            filters.append("is_palindrome = ?")
+            params.append(True)
+        if "min_length" in parsed_filters:
+            filters.append("length >= ?")
+            params.append(parsed_filters["min_length"])
+        if "max_length" in parsed_filters:
+            filters.append("length <= ?")
+            params.append(parsed_filters["max_length"])
+        if "word_count" in parsed_filters:
+            filters.append("word_count = ?")
+            params.append(parsed_filters["word_count"])
+        if "contains_character" in parsed_filters:
+            filters.append("value LIKE ?")
+            params.append(f"%{parsed_filters['contains_character']}%")
+
+        where_clause = " AND ".join(filters)
+
+        query = f"""
+            SELECT string_properties.id                          FROM string_properties                               JOIN character_frequency_map
+            ON string_properties.string_id = character_frequency_map.string_id                                        WHERE {where_clause};
+        """
+        rows = storage.fetchall(query, tuple(params))        # --- Format response ---
+        data = []
+        for row in rows:
+            rec = storage.get_analysed_string_by_value(row['id'])
+            data.append(AnalysedString(rec[1]).to_dict())
+
+        return jsonify({
+            "data": data,
+            "count": len(data),
+            "interpreted_query": {
+                "original": query,
+                "parsed_filters": parsed_filters
+            }
+        }), 200
+
+    except Exception as e:
+        abort(422, description=str(e))
+
+
+@app.delete('/strings/<string_value>')
+def delete_string(string_value):
+    """Delete a string and all its related data."""
+    storage.reload()
+
+    record = storage.get_string_by_value(string_value)
+    if not record:
+        abort(404, description='String not found')
+
+    storage.delete_string(record['id'])
+    return '', 204
+
 def error_response(code, e):
     response = {}
-    response["status"] = "success"
-    response["user"] = user
-    response["timestamp"] = datetime.utcnow().isoformat() + "Z"
-    response["fact"] = f"could not retrieve cat fact: {str(e)}"
+    response["status"] = "error"
+    response["message"] = f"Error: {str(e)}"
     return jsonify(response), code
 
+@app.errorhandler(400)
+def handle_400_error(e):
+    return error_response(400, e)
 
-@app.errorhandler(504)
-def handle_504_error(e):
-    return error_response(504, e)
+@app.errorhandler(409)
+def handle_409_error(e):
+    return error_response(409, e)
 
-
-@app.errorhandler(502)
-def handle_502_error(e):
-    return error_response(502, e)
-
+@app.errorhandler(422)
+def handle_422_error(e):
+    return error_response(422, e)
 
 @app.errorhandler(500)
 def handle_500_error(e):
     return error_response(500, e)
 
+@app.teardown_appcontext
+def close_db_connection(exception=None):
+    storage.close()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=True)

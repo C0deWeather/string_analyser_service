@@ -30,3 +30,8 @@ INSERT INTO analysed_strings (id, value, created_at) VALUES (?, ?, ?);
 insert_string_properties_sql = """
 INSERT INTO string_properties (length, is_palindrome, unique_characters, word_count, string_id)
 VALUES (?, ?, ?, ?, ?);
+"""
+insert_character_frequency_map_sql = """
+INSERT INTO character_frequency_map (string_id, character, frequency)
+VALUES (?, ?, ?);
+"""

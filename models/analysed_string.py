@@ -16,7 +16,7 @@ class AnalysedString:
         """
         if len(args) == 1 and isinstance(args[0], str):
             # Object instantiation
-            self.id = hashlib.sha256(string.encode()).hexdigest()
+            self.id = hashlib.sha256(args[0].encode()).hexdigest()
             self.string = args[0]
             self.properties = self.compute_properties()
             self.created_at = datetime.utcnow().isoformat() + "Z"
@@ -26,6 +26,7 @@ class AnalysedString:
             # a tuple was passed. That tuple should 
             # contain three fields:
             # id, value, and created_at.
+            print(args)
             self.id = args[0]
             self.string = args[1]
             self.properties = self.compute_properties()

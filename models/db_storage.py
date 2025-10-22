@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""SQLite version of DBStorage — stores DB inside a /data folder"""
-
+from flask import abort
 import sqlite3
 from sqlite3 import Error
-from sql_scripts import create_tables_sql
-
+from models.sql_scripts import (
+    create_tables_sql,
+    insert_analysed_string_sql,
+    insert_string_properties_sql,
+    insert_character_frequency_map_sql,
+)
 
 
 class DBStorage:
@@ -22,7 +25,7 @@ class DBStorage:
             self.__cursor.executescript(create_tables_sql)
             self.__conn.commit()
         except Error as e:
-            print(f"Error creating tables: {e}")
+            abort(500, str(e))
     
     @classmethod
     def reload(cls):
@@ -32,7 +35,7 @@ class DBStorage:
             cls.__conn = sqlite3.connect(cls.__db_path, check_same_thread=False)
             cls.__cursor = cls.__conn.cursor()
         except Error as e:
-            print(f"Error connecting to database: {e}")
+            abort(500, str(e))
 
     @classmethod
     def execute(cls, query, params=()):
@@ -41,6 +44,7 @@ class DBStorage:
             cls.__cursor.execute(query, params)
         except Error as e:
             cls.__conn.rollback()
+            abort(500, str(e))
 
     @classmethod
     def fetchall(cls, query, params=()):
@@ -48,8 +52,7 @@ class DBStorage:
         try:
             cls.__cursor.execute(query, params)
             return cls.__cursor.fetchall()
-        except Error as e:
-            print(f"Error fetching data: {e}")
+        except Error:
             return []
     @classmethod
     def fetchone(cls, query, params=()):
@@ -57,8 +60,7 @@ class DBStorage:
         try:
             cls.__cursor.execute(query, params)
             return cls.__cursor.fetchone()
-        except Error as e:
-            print(f"Error fetching data: {e}")
+        except Error:
             return None
 
     @classmethod
@@ -68,12 +70,17 @@ class DBStorage:
         return cls.fetchone(query, (value,))
 
     @classmethod
+    def get_all_analysed_strings(cls):
+        query = "SELECT * FROM analysed_strings;"
+        return cls.fetchall(query)
+
+    @classmethod
     def save(cls):
         """Commit the current transaction."""
         try:
             cls.__conn.commit()
         except Error as e:
-            print(f"Error saving data: {e}")
+            abort(500, str(e))
 
     @classmethod
     def insert(cls, object):
@@ -102,9 +109,31 @@ class DBStorage:
         cls.save()
 
     @classmethod
-    def get_analy
+    def delete_string(self, string_id):
+        """Delete a string and its related records from the database."""
+        try:
+            # Delete related records first
+            cls.__cursor.execute("DELETE FROM char_frequency_maps WHERE string_id = ?", (string_id,))
+            cls.__cursor.execute("DELETE FROM string_properties WHERE string_id = ?", (string_id,))
+
+            # Then delete the string itself
+            cls.__cursor.execute("DELETE FROM strings WHERE id = ?", (string_id,))
+
+            cls.save()
+
+        except Exception as e:
+            self.conn.rollback()
+            abort(500, str(e))
+
     @classmethod
     def close(cls):
-        """Close the database connection."""
-        if cls.__conn:
-            cls.__conn.close()
+        """Close the database connection and cursor safely."""
+        try:
+            if cls.__cursor:
+                cls.__cursor.close()
+                cls.__cursor = None
+            if cls.__conn:
+                cls.__conn.close()
+                cls.__conn = None
+        except Exception as e:
+            print(f"Error closing database: {e}")
