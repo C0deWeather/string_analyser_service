@@ -64,13 +64,6 @@ class DBStorage:
             return None
 
     @classmethod
-    def get_analysed_string_by_id(cls, id):
-        """Retrieve an analysed string record by its
-value."""
-        query = "SELECT * FROM analysed_strings WHERE id = ?;"
-        return cls.fetchone(query, (id,))
-
-    @classmethod
     def get_analysed_string_by_value(cls, value):
         """Retrieve an analysed string record by its value."""
         query = "SELECT * FROM analysed_strings WHERE value = ?;"
@@ -116,20 +109,20 @@ value."""
         cls.save()
 
     @classmethod
-    def delete_string(self, string_id):
+    def delete_string(cls, string_id):
         """Delete a string and its related records from the database."""
         try:
             # Delete related records first
-            cls.__cursor.execute("DELETE FROM char_frequency_maps WHERE string_id = ?", (string_id,))
+            cls.__cursor.execute("DELETE FROM character_frequency_map WHERE string_id = ?", (string_id,))
             cls.__cursor.execute("DELETE FROM string_properties WHERE string_id = ?", (string_id,))
 
             # Then delete the string itself
-            cls.__cursor.execute("DELETE FROM strings WHERE id = ?", (string_id,))
+            cls.__cursor.execute("DELETE FROM analysed_strings WHERE id = ?", (string_id,))
 
             cls.save()
 
         except Exception as e:
-            self.conn.rollback()
+            cls.__conn.rollback()
             abort(500, str(e))
 
     @classmethod
