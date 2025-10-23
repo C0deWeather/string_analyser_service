@@ -64,6 +64,13 @@ class DBStorage:
             return None
 
     @classmethod
+    def get_analysed_string_by_id(cls, id):
+        """Retrieve an analysed string record by its
+value."""
+        query = "SELECT * FROM analysed_strings WHERE id = ?;"
+        return cls.fetchone(query, (id,))
+
+    @classmethod
     def get_analysed_string_by_value(cls, value):
         """Retrieve an analysed string record by its value."""
         query = "SELECT * FROM analysed_strings WHERE value = ?;"

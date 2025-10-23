@@ -52,7 +52,8 @@ def get_analysed_string(string_value):
             404,
             description="String does not exist in the system")
     # reconstruct AnalysedString object from db record
-    analysed_string = AnalysedString(record[1])
+    print("i dey inside app.py/get_analysed_string o", record)
+    analysed_string = AnalysedString(record)
     response = analysed_string.to_dict()
     return jsonify(response), 200
 
@@ -64,7 +65,7 @@ def list_analysed_strings():
     storage.reload()
     if not request.args:
         records = storage.get_all_analysed_strings()
-        data = [AnalysedString(record[1]).to_dict() for record in records]
+        data = [AnalysedString(record).to_dict() for record in records]
         response = {
             "data": data,
             "count": len(data),
@@ -74,6 +75,8 @@ def list_analysed_strings():
 
     # --- Extract and validate query params ---
     try:
+        print("i am being tried...")
+
         is_palindrome = request.args.get('is_palindrome')
         min_length = request.args.get('min_length', type=int)
         max_length = request.args.get('max_length', type=int)
@@ -109,20 +112,21 @@ def list_analysed_strings():
 
         where_clause = " AND ".join(filters) if filters else "1=1"
 
-
         query = f"""
-            SELECT string_properties.id
-            FROM string_properties
-            JOIN character_frequency_map
-            ON string_properties.string_id = character_frequency_map.string_id
+            SELECT analysed_strings.*
+            FROM analysed_strings
+            JOIN string_properties
+            ON analysed_strings.id = string_properties.string_id
             WHERE {where_clause};
         """
+
         rows = storage.fetchall(query, tuple(params))
+        print("Query result: ", rows)
         # --- Format response ---
         data = []
         for row in rows:
-            rec = storage.get_analysed_string_by_value(row['id'])
-            data.append(AnalysedString(rec[1]).to_dict())
+            print(row)
+            data.append(AnalysedString(row).to_dict())
 
         return jsonify({
             "data": data,

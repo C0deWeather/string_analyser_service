@@ -10,27 +10,25 @@ class AnalysedString:
     This class defines the a string with special properties
     """
 
-    def __init__(self, *args):
+    def __init__(self, *args, string=None):
         """
         Initialize the string object
         """
-        if len(args) == 1 and isinstance(args[0], str):
+        
+        if string:
             # Object instantiation
-            self.id = hashlib.sha256(args[0].encode()).hexdigest()
-            self.string = args[0]
+            self.id = hashlib.sha256(string.encode()).hexdigest()
+            self.string = string
             self.properties = self.compute_properties()
             self.created_at = datetime.utcnow().isoformat() + "Z"
    
-        else:
-            # If len[args] is not 1, it means a tuple
-            # a tuple was passed. That tuple should 
-            # contain three fields:
-            # id, value, and created_at.
-            print(args)
-            self.id = args[0]
-            self.string = args[1]
+        else: # tuple is passed as arg
+            # reconstruct obj
+            record = args[0]
+            self.id = record[0]
+            self.string = record[1]
             self.properties = self.compute_properties()
-            self.created_at = args[2]
+            self.created_at = record[2]
 
     def is_palindrome(self):
         """
