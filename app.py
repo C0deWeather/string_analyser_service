@@ -196,6 +196,7 @@ def get_data(req_args):
             filters.append("value LIKE ?")
             params.append(f"%{contains_character}%")
 
+        # no filters, select all
         where_clause = " AND ".join(filters) if filters else "1=1"
 
         query = f"""
@@ -237,4 +238,4 @@ def close_db_connection(exception=None):
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
